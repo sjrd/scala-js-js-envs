@@ -17,6 +17,6 @@ trait JSEnv {
   /** Run the code in the virtual file. Return Some(<error message>) if failed
    *  None otherwise
    */
-  def runJS(classpath: JSClasspath, code: VirtualJSFile,
+  def runJS(classpath: CompleteClasspath, code: VirtualJSFile,
       logger: Logger, console: JSConsole): Option[String]
 }
