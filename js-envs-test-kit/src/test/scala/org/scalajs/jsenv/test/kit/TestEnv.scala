@@ -1,5 +1,5 @@
 /*
- * Scala.js (https://www.scala-js.org/)
+ * Scala.js JS Envs (https://github.com/scala-js/scala-js-js-envs)
  *
  * Copyright EPFL.
  *
@@ -12,7 +12,7 @@
 
 package org.scalajs.jsenv.test.kit
 
-import scala.concurrent.Future
+import scala.concurrent.{Future, Promise}
 
 import java.io._
 import java.nio.charset.StandardCharsets
@@ -27,11 +27,11 @@ private[kit] class TestEnv private (
 
   // Interface for testing.
 
-  def withSuccess(): TestEnv = copy(result = Future.unit)
+  def withSuccess(): TestEnv = copy(result = Future.successful(()))
 
   def withFailure(t: Throwable): TestEnv = copy(result = Future.failed(t))
 
-  def withHang(): TestEnv = copy(result = Future.never)
+  def withHang(): TestEnv = copy(result = Promise[Unit]().future)
 
   def withOutErr(s: String): TestEnv = {
     val bytes = s.getBytes(StandardCharsets.UTF_8)
@@ -52,7 +52,7 @@ private[kit] class TestEnv private (
 
   def withMsgs(msgs: String*): TestEnv = copy(msgs = msgs.toList)
 
-  private def this() = this(Future.unit, None, Nil)
+  private def this() = this(Future.successful(()), None, Nil)
 
   private def copy(
       result: Future[Unit] = result,
@@ -63,13 +63,13 @@ private[kit] class TestEnv private (
 
   val name: String = "TestEnv"
 
-  def start(input: Input, config: RunConfig): JSRun = {
+  def start(input: Seq[Input], config: RunConfig): JSRun = {
     require(msgs.isEmpty)
     callOnOutputStream(config)
     new TestRun
   }
 
-  def startWithCom(input: Input, config: RunConfig, onMessage: String => Unit): JSComRun = {
+  def startWithCom(input: Seq[Input], config: RunConfig, onMessage: String => Unit): JSComRun = {
     callOnOutputStream(config)
     msgs.foreach(onMessage)
     new TestRun with JSComRun {

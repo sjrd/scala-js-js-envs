@@ -1,5 +1,5 @@
 /*
- * Scala.js (https://www.scala-js.org/)
+ * Scala.js JS Envs (https://github.com/scala-js/scala-js-js-envs)
  *
  * Copyright EPFL.
  *
