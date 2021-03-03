@@ -1,0 +1,30 @@
+name: CI
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        scalaversion: ["2.11.12", "2.12.11", "2.13.2"]
+        project: ["scalajs-js-envs", "scalajs-js-envs-test-kit", "scalajs-env-nodejs"]
+    steps:
+      - uses: actions/checkout@v2
+      - uses: olafurpg/setup-scala@v10
+        with:
+          java-version: "adopt@1.8"
+      - uses: coursier/cache-action@v5
+      - name: Test
+        run: sbt "++${{ matrix.scalaversion }}" ${{ matrix.project }}/test
+      - name: Doc generation
+        run: sbt "++${{ matrix.scalaversion }}" ${{ matrix.project }}/doc
+      - name: MiMa
+        run: sbt "++${{ matrix.scalaversion }}" ${{ matrix.project }}/mimaReportBinaryIssues
+      - name: Header check
+        run: sbt "++${{ matrix.scalaversion }}" ${{ matrix.project }}/headerCheck ${{ matrix.project }}/test:headerCheck
