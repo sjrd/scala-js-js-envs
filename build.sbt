@@ -13,6 +13,8 @@ inThisBuild(Def.settings(
     "-encoding", "utf-8",
   ),
 
+  versionScheme := Some("semver-spec"),
+
   // Licensing
   homepage := Some(url("https://github.com/scala-js/scala-js-js-envs")),
   startYear := Some(2013),
