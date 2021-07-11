@@ -140,8 +140,17 @@ object ExternalJSRun {
 
     config.logger.debug("Starting process: " + command.mkString(" "))
 
-    builder.start()
+    try {
+      builder.start()
+    } catch {
+      case NonFatal(t) =>
+        throw new FailedToStartException(command, t)
+    }
   }
+
+  final case class FailedToStartException(
+      command: List[String], cause: Throwable)
+      extends Exception(s"failed to start command $command", cause)
 
   final case class NonZeroExitException(retVal: Int)
       extends Exception(s"exited with code $retVal")
