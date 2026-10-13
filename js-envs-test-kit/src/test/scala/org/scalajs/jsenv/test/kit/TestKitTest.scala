@@ -32,7 +32,7 @@ class TestKitTest {
 
       expectAssert(msg, cause)(body(kit))
 
-      assertFalse("faster than timeout", deadline.isOverdue)
+      assertFalse("faster than timeout", deadline.isOverdue())
     }
 
     test(env.withSuccess(), null)
@@ -50,7 +50,7 @@ class TestKitTest {
       }
     }
   }
-  
+
   @Test
   def noHangExpectErrNoStream: Unit = {
     noHangTest(TestEnv(),  "run completed and did not call onOutputStream") {
@@ -80,7 +80,7 @@ class TestKitTest {
       }
     }
   }
-  
+
   @Test
   def noHangExpectErrOnEOF: Unit = {
     noHangTest(TestEnv().withOutErr(""), "reached end of stream") {

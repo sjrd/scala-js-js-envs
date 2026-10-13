@@ -88,7 +88,7 @@ private object JSEnvSuiteRunner {
       if (config.supportsESModules)
         b += InputKind.ESModule
 
-      b.result
+      b.result()
     }
 
     for (inputKind <- inputKindValues) {
