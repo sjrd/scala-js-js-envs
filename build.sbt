@@ -6,7 +6,7 @@ val newScalaBinaryVersionsInThisRelease: Set[String] = Set.empty
 inThisBuild(Def.settings(
   organization := "org.scala-js",
   scalaVersion := "2.12.11",
-  crossScalaVersions := Seq("2.11.12", "2.12.11", "2.13.2", "3.3.7"),
+  crossScalaVersions := Seq("2.12.11", "2.13.2", "3.3.7"),
   scalacOptions ++= Seq(
     "-deprecation",
     "-feature",
