@@ -42,6 +42,9 @@ object Input {
 
   /** The file is to be loaded as a CommonJS module. */
   final case class CommonJSModule(module: Path) extends Input
+
+  /** The file is to be loaded as a Wasm module. */
+  final case class WasmModule(module: Path) extends Input
 }
 
 class UnsupportedInputException(msg: String, cause: Throwable)
