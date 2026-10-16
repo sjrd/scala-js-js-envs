@@ -48,11 +48,24 @@ final class NodeJSEnv(config: NodeJSEnv.Config) extends JSEnv {
     }
   }
 
-  private def validateInput(input: Seq[Input]): Unit = input.foreach {
-    case _:Input.Script | _:Input.ESModule | _:Input.CommonJSModule | _:Input.WasmModule =>
-      // ok
-    case _ =>
-      throw new UnsupportedInputException(input)
+  private def validateInput(input: Seq[Input]): Unit = {
+    val knownInputsSoFar = new java.util.IdentityHashMap[Input, Boolean]()
+    for (item <- input) {
+      item match {
+        case _: Input.Script =>
+          // ok; do not add to knownInputsSoFar
+        case _:Input.ESModule | _:Input.CommonJSModule =>
+          // ok
+          knownInputsSoFar.put(item, true)
+        case Input.WasmModule(_, imports) =>
+          // check that all imports are known
+          if (!imports.forall(pair => knownInputsSoFar.containsKey(pair._2)))
+            throw new UnsupportedInputException(input)
+          knownInputsSoFar.put(item, true)
+        case _ =>
+          throw new UnsupportedInputException(input)
+      }
+    }
   }
 
   private def internalStart(input: Seq[Input], runConfig: RunConfig): JSRun = {
@@ -106,7 +119,7 @@ object NodeJSEnv {
       |const wasmI16ArrayPromise =
       |    WebAssembly.instantiate(wasmI16ArrayBytes).then(m => m.instance.exports);
       |
-      |async function importWasmModule(path) {
+      |async function importWasmModule(path, imports) {
       |  const wasmI16Array = await wasmI16ArrayPromise;
       |
       |  const wasmI16ArrayToJSString = function(array) {
@@ -126,7 +139,7 @@ object NodeJSEnv {
       |  }
       |
       |  // a null prototype is required to isolate Wasm even from what's in Object.prototype
-      |  const importsObj = Object.create(null);
+      |  const importsObj = Object.assign(Object.create(null), imports);
       |
       |  if (typeof scalajsCom !== 'undefined') {
       |    const comImport = Object.create(null);
@@ -180,20 +193,29 @@ object NodeJSEnv {
       }
     }
 
+    val inputToVarName = new java.util.IdentityHashMap[Input, String]()
+    for ((input, index) <- input.zipWithIndex)
+      inputToVarName.put(input, s"module$index")
+
     def requireCommonJSModule(module: Path): String =
       s"""require("${escapeJS(toFile(module).getAbsolutePath)}")"""
 
     def importESModule(module: Path): String =
       s"""import("${escapeJS(toFile(module).toURI.toASCIIString)}")"""
 
-    def importWasmModule(module: Path): String =
-      s"""importWasmModule("${escapeJS(toFile(module).getAbsolutePath)}")"""
+    def importWasmModule(module: Path, imports: List[(String, Input)]): String = {
+      val importsObjItems = for ((name, importInput) <- imports) yield
+        s""""${escapeJS(name)}": ${inputToVarName.get(importInput)}"""
+      val importsObj = importsObjItems.mkString("{", ", ", "}")
+
+      s"""importWasmModule("${escapeJS(toFile(module).getAbsolutePath)}", $importsObj)"""
+    }
 
     def execInputExpr(input: Input): String = input match {
-      case Input.Script(script)         => runScript(script)
-      case Input.CommonJSModule(module) => requireCommonJSModule(module)
-      case Input.ESModule(module)       => importESModule(module)
-      case Input.WasmModule(module)     => importWasmModule(module)
+      case Input.Script(script)              => runScript(script)
+      case Input.CommonJSModule(module)      => requireCommonJSModule(module)
+      case Input.ESModule(module)            => importESModule(module)
+      case Input.WasmModule(module, imports) => importWasmModule(module, imports)
     }
 
     val hasESModule = input.exists(_.isInstanceOf[Input.ESModule])
@@ -212,9 +234,9 @@ object NodeJSEnv {
          * chain things, and we must use an actual file to feed code to Node.js
          * (because `import()` cannot be used from the standard input).
          */
-        val importChain = input.foldLeft("Promise.resolve()") { (prev, item) =>
-          s"$prev.\n  then(() => ${execInputExpr(item)})"
-        }
+        val importChain = input.foldLeft("Promise.resolve().then(() =>") { (prev, item) =>
+          s"$prev\n  Promise.resolve(${execInputExpr(item)}).then((${inputToVarName.get(item)}) =>"
+        } + ("\n  void 0" + ")" * (input.size + 1))
         val importerFileContent = {
           s"""
             |${if (hasWasmModule) wasmModuleSupport else "" }
