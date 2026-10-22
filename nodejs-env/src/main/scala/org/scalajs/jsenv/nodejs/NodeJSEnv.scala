@@ -149,10 +149,24 @@ object NodeJSEnv {
       |    importsObj["scalajs:com"] = comImport;
       |  }
       |
+      |  // Load and compile the Wasm module
       |  const fs = await import('node:fs/promises');
+      |  const { resolve } = await import('node:path');
       |  const buffer = await fs.readFile(path);
-      |  const result = await WebAssembly.instantiate(buffer, importsObj);
-      |  const moduleExports = result.instance.exports;
+      |  const module = await WebAssembly.compile(buffer);
+      |
+      |  // Look for additional imports through Node.js resolution
+      |  for (const importDecl of WebAssembly.Module.imports(module)) {
+      |    const moduleName = importDecl.module;
+      |    if (!Object.hasOwn(importsObj, moduleName)) {
+      |      const importedModule = await import(resolve(path, moduleName));
+      |      importsObj[moduleName] = importedModule;
+      |    }
+      |  }
+      |
+      |  // Instantiate the module with all the resolved imports
+      |  const instance = await WebAssembly.instantiate(module, importsObj);
+      |  const moduleExports = instance.exports;
       |
       |  if (typeof scalajsCom !== 'undefined') {
       |    const newReceive = moduleExports["scalajs:com/receive"];
