@@ -123,8 +123,11 @@ object NodeJSEnv {
     def requireCommonJSModule(module: Path): String =
       s"""require("${escapeJS(toFile(module).getAbsolutePath)}")"""
 
+    /* We use toPath.toUri to get a file:/// URI instead of a file:/ URI.
+     * The default provider of nio.file.Path guarantees this form for local files.
+     */
     def importESModule(module: Path): String =
-      s"""import("${escapeJS(toFile(module).toURI.toASCIIString)}")"""
+      s"""import("${escapeJS(toFile(module).toPath.toUri.toASCIIString)}")"""
 
     def execInputExpr(input: Input): String = input match {
       case Input.Script(script)         => runScript(script)
