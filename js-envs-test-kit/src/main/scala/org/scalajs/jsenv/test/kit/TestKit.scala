@@ -22,6 +22,9 @@ import java.util.concurrent.Executors
 
 import com.google.common.jimfs.Jimfs
 
+import org.scalajs.linker.backend.webassembly._
+import org.scalajs.linker.backend.webassembly.{Modules => wamod}
+
 import org.scalajs.jsenv._
 
 /** TestKit is a utility class to simplify testing of [[JSEnv]]s.
@@ -97,12 +100,20 @@ final class TestKit(jsEnv: JSEnv, timeout: FiniteDuration,
     withRun(codeToInput(code))(body)
 
   /** Convenience method to start a [[Run]] and close it after usage. */
+  def withRun[T](module: wamod.Module)(body: Run => T): T =
+    withRun(wasmModuleToInput(module))(body)
+
+  /** Convenience method to start a [[Run]] and close it after usage. */
   def withRun[T](input: Seq[Input])(body: Run => T): T =
     withRun(input, RunConfig())(body)
 
   /** Convenience method to start a [[Run]] and close it after usage. */
   def withRun[T](code: String, config: RunConfig)(body: Run => T): T =
     withRun(codeToInput(code), config)(body)
+
+  /** Convenience method to start a [[Run]] and close it after usage. */
+  def withRun[T](module: wamod.Module, config: RunConfig)(body: Run => T): T =
+    withRun(wasmModuleToInput(module), config)(body)
 
   /** Convenience method to start a [[Run]] and close it after usage. */
   def withRun[T](input: Seq[Input], config: RunConfig)(body: Run => T): T = {
@@ -115,11 +126,19 @@ final class TestKit(jsEnv: JSEnv, timeout: FiniteDuration,
   def withComRun[T](code: String)(body: ComRun => T): T = withComRun(codeToInput(code))(body)
 
   /** Convenience method to start a [[ComRun]] and close it after usage. */
+  def withComRun[T](module: wamod.Module)(body: ComRun => T): T =
+    withComRun(wasmModuleToInput(module))(body)
+
+  /** Convenience method to start a [[ComRun]] and close it after usage. */
   def withComRun[T](input: Seq[Input])(body: ComRun => T): T = withComRun(input, RunConfig())(body)
 
   /** Convenience method to start a [[ComRun]] and close it after usage. */
   def withComRun[T](code: String, config: RunConfig)(body: ComRun => T): T =
     withComRun(codeToInput(code), config)(body)
+
+  /** Convenience method to start a [[ComRun]] and close it after usage. */
+  def withComRun[T](module: wamod.Module, config: RunConfig)(body: ComRun => T): T =
+    withComRun(wasmModuleToInput(module), config)(body)
 
   /** Convenience method to start a [[ComRun]] and close it after usage. */
   def withComRun[T](input: Seq[Input], config: RunConfig)(body: ComRun => T): T = {
@@ -158,6 +177,16 @@ final class TestKit(jsEnv: JSEnv, timeout: FiniteDuration,
     val p = Files.write(
         Jimfs.newFileSystem().getPath("test.js"),
         code.getBytes(StandardCharsets.UTF_8))
+    List(pathToInput(p))
+  }
+
+  private def wasmModuleToInput(module: wamod.Module): Seq[Input] = {
+    val byteBuffer = BinaryWriter.write(module, emitDebugInfo = false)
+    val bytes = new Array[Byte](byteBuffer.remaining())
+    byteBuffer.get(bytes)
+    val p = Files.write(
+        Jimfs.newFileSystem().getPath("test.wasm"),
+        bytes)
     List(pathToInput(p))
   }
 }

@@ -123,6 +123,7 @@ lazy val `scalajs-js-envs-test-kit` = project
     libraryDependencies ++= Seq(
         "com.google.jimfs" % "jimfs" % "1.3.1",
         "junit" % "junit" % "4.12",
+        "org.scala-js" %% "scalajs-linker" % "1.22.0", // to write Wasm modules
         "com.novocode" % "junit-interface" % "0.11" % "test"
     ),
   )
