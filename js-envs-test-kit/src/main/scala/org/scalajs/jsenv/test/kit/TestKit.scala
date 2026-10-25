@@ -86,8 +86,8 @@ final class TestKit(jsEnv: JSEnv, timeout: FiniteDuration,
   /** Starts a [[ComRun]] for testing. */
   def startWithCom(input: Seq[Input], config: RunConfig): ComRun = {
     val msg = new MsgHandler
-    val (run, out, err) = io(config)(jsEnv.startWithCom(input, _, msg.onMessage _))
-    run.future.onComplete(msg.onRunComplete _)(TestKit.completer)
+    val (run, out, err) = io(config)(jsEnv.startWithCom(input, _, msg.onMessage(_)))
+    run.future.onComplete(msg.onRunComplete(_))(using TestKit.completer)
 
     new ComRun(run, out, err, msg, timeout)
   }
@@ -137,8 +137,8 @@ final class TestKit(jsEnv: JSEnv, timeout: FiniteDuration,
     val err = new IOReader
 
     def onOutputStream(o: Option[InputStream], e: Option[InputStream]) = {
-      o.foreach(out.onInputStream _)
-      e.foreach(err.onInputStream _)
+      o.foreach(out.onInputStream(_))
+      e.foreach(err.onInputStream(_))
     }
 
     val newConfig = config
@@ -148,8 +148,8 @@ final class TestKit(jsEnv: JSEnv, timeout: FiniteDuration,
 
     val run = start(newConfig)
 
-    run.future.onComplete(out.onRunComplete _)(TestKit.completer)
-    run.future.onComplete(err.onRunComplete _)(TestKit.completer)
+    run.future.onComplete(out.onRunComplete(_))(using TestKit.completer)
+    run.future.onComplete(err.onRunComplete(_))(using TestKit.completer)
 
     (run, out, err)
   }

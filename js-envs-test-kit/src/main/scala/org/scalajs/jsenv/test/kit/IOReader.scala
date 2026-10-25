@@ -30,7 +30,7 @@ private[kit] final class IOReader {
   private val executor = Executors.newSingleThreadExecutor()
 
   private[this] var _closed = false
-  private[this] var _channel: ReadableByteChannel = _
+  private[this] var _channel: ReadableByteChannel = null
   private[this] val run = Promise[Unit]()
 
   def read(len: Int, deadline: Deadline): ByteBuffer = {

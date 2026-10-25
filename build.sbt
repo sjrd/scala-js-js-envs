@@ -6,11 +6,10 @@ val newScalaBinaryVersionsInThisRelease: Set[String] = Set.empty
 inThisBuild(Def.settings(
   organization := "org.scala-js",
   scalaVersion := "2.12.21",
-  crossScalaVersions := Seq("2.12.21", "2.13.18", "3.3.8"),
+  crossScalaVersions := Seq("2.12.21", "2.13.18", "3.8.3"),
   scalacOptions ++= Seq(
     "-deprecation",
     "-feature",
-    "-Xfatal-warnings",
     "-encoding", "utf-8",
   ),
 
@@ -51,6 +50,27 @@ inThisBuild(Def.settings(
 val commonSettings = Def.settings(
   // Links to the JavaDoc do not work
   Compile / doc / scalacOptions -= "-Xfatal-warnings",
+
+  // Fatal warnings, with some exceptions in 3.x
+  scalacOptions ++= {
+    if (scalaVersion.value.startsWith("3.")) {
+      /* Scala 3 deprecates a bunch of syntax. We cannot get rid of some of
+       * it, because we still have to cross-compile with Scala 2.
+       * We silence the corresponding warnings.
+       */
+      val messageKeywordsToSilence = List(
+        "private[this]",
+        "_*",
+      )
+      val regex = messageKeywordsToSilence.map(java.util.regex.Pattern.quote(_)).mkString("|")
+      Seq(
+        "-Werror",
+        s"-Wconf:msg=.*($regex).*:s",
+      )
+    } else {
+      Seq("-Xfatal-warnings")
+    }
+  },
 
   // Scaladoc linking
   apiURL := {
