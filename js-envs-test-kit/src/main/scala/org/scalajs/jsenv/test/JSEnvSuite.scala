@@ -39,11 +39,11 @@ import org.junit.runners.model.TestClass
 abstract class JSEnvSuite(private[test] val config: JSEnvSuiteConfig)
 
 /** Runner for a [[JSEnvSuite]]. May only be used on subclasses of [[JSEnvSuite]]. */
-final class JSEnvSuiteRunner(root: Class[_], config: JSEnvSuiteConfig)
+final class JSEnvSuiteRunner(root: Class[?], config: JSEnvSuiteConfig)
     extends Suite(root, JSEnvSuiteRunner.getRunners(config)) {
 
   /** Constructor for reflective instantiation via `@RunWith`. */
-  def this(suite: Class[_ <: JSEnvSuite]) =
+  def this(suite: Class[? <: JSEnvSuite]) =
     this(suite, suite.getDeclaredConstructor().newInstance().config)
 
   /** Constructor for instantiation in a user defined Runner. */
