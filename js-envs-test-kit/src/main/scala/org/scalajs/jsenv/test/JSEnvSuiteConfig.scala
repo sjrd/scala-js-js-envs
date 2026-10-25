@@ -31,6 +31,8 @@ import scala.concurrent.duration._
  *  @param supportsScripts Whether the [[JSEnv]] under test supports [[JSEnv.Input.Script]].
  *  @param supportsCommonJSModules Whether the [[JSEnv]] under test supports [[JSEnv.Input.CommonJSModule]].
  *  @param supportsESModules Whether the [[JSEnv]] under test supports [[JSEnv.Input.ESModule]].
+ *  @param supportsWasmModules Whether the [[JSEnv]] under test supports [[JSEnv.Input.WasmModule]].
+ *    False by default.
  *  @param awaitTimeout Amount of time test cases wait for "things". This is
  *      deliberately not very well specified. Leave this as the default and
  *      increase it if your tests fail spuriously due to timeouts.
@@ -46,6 +48,7 @@ final class JSEnvSuiteConfig private (
     val supportsScripts: Boolean,
     val supportsCommonJSModules: Boolean,
     val supportsESModules: Boolean,
+    val supportsWasmModules: Boolean,
     val exitJSStatement: Option[String],
     val awaitTimeout: FiniteDuration,
     val description: String
@@ -57,6 +60,7 @@ final class JSEnvSuiteConfig private (
       supportsScripts = true,
       supportsCommonJSModules = true,
       supportsESModules = true,
+      supportsWasmModules = false,
       exitJSStatement = None,
       awaitTimeout = 1.minute,
       description = jsEnv.name
@@ -77,6 +81,9 @@ final class JSEnvSuiteConfig private (
   def withSupportsESModules(supportsESModules: Boolean): JSEnvSuiteConfig =
     copy(supportsESModules = supportsESModules)
 
+  def withSupportsWasmModules(supportsWasmModules: Boolean): JSEnvSuiteConfig =
+    copy(supportsWasmModules = supportsWasmModules)
+
   def withExitJSStatement(code: String): JSEnvSuiteConfig =
     copy(exitJSStatement = Some(code))
 
@@ -92,11 +99,12 @@ final class JSEnvSuiteConfig private (
       supportsScripts: Boolean = supportsScripts,
       supportsCommonJSModules: Boolean = supportsCommonJSModules,
       supportsESModules: Boolean = supportsESModules,
+      supportsWasmModules: Boolean = supportsWasmModules,
       exitJSStatement: Option[String] = exitJSStatement,
       awaitTimeout: FiniteDuration = awaitTimeout,
       description: String = description) = {
     new JSEnvSuiteConfig(jsEnv, supportsCom, supportsTimeout, supportsScripts,
-        supportsCommonJSModules, supportsESModules,
+        supportsCommonJSModules, supportsESModules, supportsWasmModules,
         exitJSStatement, awaitTimeout, description)
   }
 }

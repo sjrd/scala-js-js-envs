@@ -19,5 +19,6 @@ import org.junit.runner.RunWith
 @RunWith(classOf[JSEnvSuiteRunner])
 class NodeJSSuite extends JSEnvSuite(
   JSEnvSuiteConfig(new NodeJSEnv)
+    .withSupportsWasmModules(true)
     .withExitJSStatement("process.exit(0);")
 )
