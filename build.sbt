@@ -3,6 +3,8 @@ import com.typesafe.tools.mima.core.{Problem, ProblemFilters}
 val previousVersion: Option[String] = Some("1.6.0")
 val newScalaBinaryVersionsInThisRelease: Set[String] = Set.empty
 
+val createTestFiles: TaskKey[Unit] = taskKey("create the test files for NodeJSEnv")
+
 inThisBuild(Def.settings(
   organization := "org.scala-js",
   scalaVersion := "2.12.21",
@@ -141,6 +143,7 @@ lazy val `scalajs-js-envs-test-kit` = project
     libraryDependencies ++= Seq(
         "com.google.jimfs" % "jimfs" % "1.3.1",
         "junit" % "junit" % "4.12",
+        "org.scala-js" %% "scalajs-linker" % "1.22.0", // to write Wasm modules
         "com.novocode" % "junit-interface" % "0.11" % "test"
     ),
   )
@@ -154,5 +157,11 @@ lazy val `scalajs-env-nodejs` = project
         "com.google.jimfs" % "jimfs" % "1.3.1",
         "com.novocode" % "junit-interface" % "0.11" % "test"
     ),
+    createTestFiles := {
+      val targetFile = target.value / "wasm-test.wasm"
+      val relPathToTestLib = "../testfiles/testlib.js"
+      build.GenImportTestWasm.generate(targetFile, relPathToTestLib)
+    },
+    Test / compile := (Test / compile).dependsOn(createTestFiles).value,
   )
   .dependsOn(`scalajs-js-envs`, `scalajs-js-envs-test-kit` % "test")

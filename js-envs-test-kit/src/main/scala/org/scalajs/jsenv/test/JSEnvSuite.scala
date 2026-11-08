@@ -88,14 +88,19 @@ private object JSEnvSuiteRunner {
       if (config.supportsESModules)
         b += InputKind.ESModule
 
+      if (config.supportsWasmModules)
+        b += InputKind.WasmModule
+
       b.result()
     }
 
     for (inputKind <- inputKindValues) {
+      val isWasm = inputKind == TestKit.InputKind.WasmModule
+
       for (withCom <- withComValues)
         runners.add(r[RunTests](config, "withCom" -> withCom, "inputKind" -> inputKind))
 
-      if (config.supportsTimeout) {
+      if (config.supportsTimeout && !isWasm) {
         for (withCom <- withComValues)
           runners.add(r[TimeoutRunTests](config, "withCom" -> withCom,  "inputKind" -> inputKind))
       }
@@ -103,7 +108,7 @@ private object JSEnvSuiteRunner {
       if (config.supportsCom)
         runners.add(r[ComTests](config, "inputKind" -> inputKind))
 
-      if (config.supportsCom && config.supportsTimeout)
+      if (config.supportsCom && config.supportsTimeout && !isWasm)
         runners.add(r[TimeoutComTests](config, "inputKind" -> inputKind))
     }
 

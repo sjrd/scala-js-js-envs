@@ -21,8 +21,17 @@ import com.google.common.jimfs.Jimfs
 import org.junit.Assume._
 import org.junit.{Test, AssumptionViolatedException}
 
+import org.scalajs.ir.OriginalName.NoOriginalName
+
+import org.scalajs.linker.backend.webassembly.{Identitities => wanme}
+import org.scalajs.linker.backend.webassembly.{Instructions => wa}
+import org.scalajs.linker.backend.webassembly.{Modules => wamod}
+import org.scalajs.linker.backend.webassembly.{Types => watpe}
+
 import org.scalajs.jsenv._
 import org.scalajs.jsenv.test.kit.{TestKit, Run}
+
+import WasmModuleHelpers._
 
 private[test] class RunTests(config: JSEnvSuiteConfig, withCom: Boolean,
     defaultInputKind: TestKit.InputKind) {
@@ -30,56 +39,165 @@ private[test] class RunTests(config: JSEnvSuiteConfig, withCom: Boolean,
 
   private val kit = new TestKit(config.jsEnv, config.awaitTimeout, defaultInputKind)
 
-  private def withRun(input: Seq[Input])(body: Run => Unit) = {
+  /** Whether the input kind is based on JavaScript, as opposed to Wasm.
+   *
+   *  Virtually all tests have a separate code path for JS and Wasm. We keep
+   *  them in the same class and test functions regardless. This way, we can
+   *  visually inspect that we test the same features for JS and Wasm.
+   *
+   *  JS tests often use `console.log` as additional confirmation that things
+   *  happen. The Wasm version of those tests cannot do that, since there is
+   *  no way to print. They only test success or failure.
+   */
+  private val isJS: Boolean = defaultInputKind != TestKit.InputKind.WasmModule
+
+  private def withRun(input: Seq[Input])(body: Run => Unit): Unit = {
     if (withCom) kit.withComRun(input)(body)
     else kit.withRun(input)(body)
   }
 
-  private def withRun(code: String, config: RunConfig = RunConfig())(body: Run => Unit) = {
+  private def withRun(code: String, config: RunConfig = RunConfig())(body: Run => Unit): Unit = {
     if (withCom) kit.withComRun(code, config)(body)
     else kit.withRun(code, config)(body)
   }
 
+  private def withRun(module: wamod.Module, config: RunConfig)(body: Run => Unit): Unit = {
+    if (withCom) kit.withComRun(toWasmModule(module), config)(body)
+    else kit.withRun(toWasmModule(module), config)(body)
+  }
+
+  private def withRun(module: wamod.Module)(body: Run => Unit): Unit =
+    withRun(module, RunConfig())(body)
+
+  private val emptyWasmModule = makeWasmModuleBuilder().build()
+
   @Test
   def failureTest: Unit = {
-    withRun("""
-      var a = {};
-      a.foo();
-    """) {
-      _.fails()
+    if (isJS) {
+      withRun("""
+        var a = {};
+        a.foo();
+      """) {
+        _.fails()
+      }
+    } else {
+      val builder = makeWasmModuleBuilder()
+
+      locally {
+        val fb = newFunctionBuilder(builder, StartFunctionID)
+        fb += wa.Unreachable // traps
+        fb.buildAndAddToModule()
+      }
+
+      builder.setStart(StartFunctionID)
+
+      withRun(builder.build()) {
+        _.fails()
+      }
     }
   }
 
   @Test
   def syntaxErrorTest: Unit = {
-    withRun("{") {
-      _.fails()
+    if (isJS) {
+      withRun("{") {
+        _.fails()
+      }
+    } else {
+      val builder = makeWasmModuleBuilder()
+
+      locally {
+        val fb = newFunctionBuilder(builder, StartFunctionID)
+        fb += wa.I32Add // does not validate; there is nothing on the stack
+        fb.buildAndAddToModule()
+      }
+
+      builder.setStart(StartFunctionID)
+
+      withRun(builder.build()) {
+        _.fails()
+      }
     }
   }
 
   @Test
   def throwExceptionTest: Unit = {
-    withRun("throw 1;") {
-      _.fails()
+    if (isJS) {
+      withRun("throw 1;") {
+        _.fails()
+      }
+    } else {
+      val builder = makeWasmModuleBuilder()
+
+      val payloadID = builder.functionTypeToTypeID(watpe.FunctionType(List(watpe.Int32), Nil))
+      builder.addTag(wamod.Tag(SimpleExceptionTag, NoOriginalName, payloadID))
+
+      locally {
+        val fb = newFunctionBuilder(builder, StartFunctionID)
+        fb += wa.I32Const(1)
+        fb += wa.Throw(SimpleExceptionTag)
+        fb.buildAndAddToModule()
+      }
+
+      builder.setStart(StartFunctionID)
+
+      withRun(builder.build()) {
+        _.fails()
+      }
     }
   }
 
   @Test
   def catchExceptionTest: Unit = {
-    withRun("""
-      try {
-        throw "hello world";
-      } catch (e) {
-        console.log(e);
+    if (isJS) {
+      withRun("""
+        try {
+          throw "hello world";
+        } catch (e) {
+          console.log(e);
+        }
+      """) {
+        _.expectOut("hello world\n")
+          .closeRun()
       }
-    """) {
-      _.expectOut("hello world\n")
-        .closeRun()
+    } else {
+      val builder = makeWasmModuleBuilder()
+
+      val payloadID = builder.functionTypeToTypeID(watpe.FunctionType(List(watpe.Int32), Nil))
+      builder.addTag(wamod.Tag(SimpleExceptionTag, NoOriginalName, payloadID))
+
+      locally {
+        val fb = newFunctionBuilder(builder, StartFunctionID)
+        fb.block(watpe.Int32) { catchLabel =>
+          fb.tryTable()(
+            List(wa.CatchClause.Catch(SimpleExceptionTag, catchLabel))
+          ) {
+            fb += wa.I32Const(1)
+            fb += wa.Throw(SimpleExceptionTag)
+          }
+          fb += wa.Unreachable
+        }
+
+        // do some stuff with the int, just for validation purposes
+        fb += wa.I32Const(2)
+        fb += wa.I32Add
+        fb += wa.Drop
+
+        fb.buildAndAddToModule()
+      }
+
+      builder.setStart(StartFunctionID)
+
+      withRun(builder.build()) {
+        _.closeRun()
+      }
     }
   }
 
   @Test // Failed in Phantom - #2053
   def utf8Test: Unit = {
+    assumeTrue("Irrelevant for Wasm", isJS)
+
     withRun("console.log('\u1234')") {
       _.expectOut("\u1234\n")
         .closeRun()
@@ -88,6 +206,8 @@ private[test] class RunTests(config: JSEnvSuiteConfig, withCom: Boolean,
 
   @Test
   def allowScriptTags: Unit = {
+    assumeTrue("Irrelevant for Wasm", isJS)
+
     withRun("""console.log("<script></script>");""") {
       _.expectOut("<script></script>\n")
         .closeRun()
@@ -96,6 +216,8 @@ private[test] class RunTests(config: JSEnvSuiteConfig, withCom: Boolean,
 
   @Test
   def jsExitsTest: Unit = {
+    assumeTrue("Irrelevant for Wasm", isJS)
+
     val exitStat = config.exitJSStatement.getOrElse(
       throw new AssumptionViolatedException("JSEnv needs exitJSStatement"))
 
@@ -107,6 +229,8 @@ private[test] class RunTests(config: JSEnvSuiteConfig, withCom: Boolean,
   // #500 Node.js used to strip double percentage signs even with only 1 argument
   @Test
   def percentageTest: Unit = {
+    assumeTrue("Irrelevant for Wasm", isJS)
+
     val strings = (1 to 15).map("%" * _)
     val code = strings.map(str => s"""console.log("$str");\n""").mkString("")
     val result = strings.mkString("", "\n", "\n")
@@ -122,20 +246,37 @@ private[test] class RunTests(config: JSEnvSuiteConfig, withCom: Boolean,
     /* This test also tests a failure mode where the ExternalJSRun is still
      * piping output while the client calls close.
      */
-    withRun("") {
-      _.closeRun()
+    if (isJS) {
+      withRun("") {
+        _.closeRun()
+      }
+    } else {
+      withRun(emptyWasmModule) {
+        _.closeRun()
+      }
     }
   }
 
   @Test
   def multiCloseAfterTerminatedTest: Unit = {
-    withRun("") { run =>
-      run.closeRun()
+    if (isJS) {
+      withRun("") { run =>
+        run.closeRun()
 
-      // Should be noops (and not fail).
-      run.closeRun()
-      run.closeRun()
-      run.closeRun()
+        // Should be noops (and not fail).
+        run.closeRun()
+        run.closeRun()
+        run.closeRun()
+      }
+    } else {
+      withRun(emptyWasmModule) { run =>
+        run.closeRun()
+
+        // Should be noops (and not fail).
+        run.closeRun()
+        run.closeRun()
+        run.closeRun()
+      }
     }
   }
 
@@ -153,14 +294,23 @@ private[test] class RunTests(config: JSEnvSuiteConfig, withCom: Boolean,
   def defaultFilesystem: Unit = {
     // Tests that a JSEnv works with files from the default filesystem.
 
-    val tmpFile = File.createTempFile("sjs-run-test-defaultfile", ".js")
+    val tmpFile = File.createTempFile("sjs-run-test-defaultfile", if (isJS) ".js" else ".wasm")
     try {
       val tmpPath = tmpFile.toPath
-      Files.write(tmpPath, "console.log(\"test\");".getBytes(StandardCharsets.UTF_8))
 
-      withRun(kit.pathToInput(tmpPath) :: Nil) {
-        _.expectOut("test\n")
-          .closeRun()
+      if (isJS) {
+        Files.write(tmpPath, "console.log(\"test\");".getBytes(StandardCharsets.UTF_8))
+
+        withRun(kit.pathToInput(tmpPath) :: Nil) {
+          _.expectOut("test\n")
+            .closeRun()
+        }
+      } else {
+        toWasmModule(emptyWasmModule).writeTo(tmpPath)
+
+        withRun(kit.pathToInput(tmpPath) :: Nil) {
+          _.closeRun()
+        }
       }
     } finally {
       tmpFile.delete()
@@ -181,7 +331,10 @@ private[test] class RunTests(config: JSEnvSuiteConfig, withCom: Boolean,
   @Test(expected = classOf[IllegalArgumentException])
   def ensureValidate: Unit = {
     val cfg = RunConfig().withEternallyUnsupportedOption(true)
-    withRun("", cfg)(identity)
+    if (isJS)
+      withRun("", cfg)(identity)
+    else
+      withRun(emptyWasmModule, cfg)(identity)
   }
 
   @Test(expected = classOf[UnsupportedInputException])
@@ -193,4 +346,8 @@ private[test] class RunTests(config: JSEnvSuiteConfig, withCom: Boolean,
 
 private[test] object RunTests {
   final case class EternallyUnsupportedInput() extends Input
+
+  private case object StartFunctionID extends wanme.FunctionID
+
+  private case object SimpleExceptionTag extends wanme.TagID
 }

@@ -49,7 +49,7 @@ final class NodeJSEnv(config: NodeJSEnv.Config) extends JSEnv {
   }
 
   private def validateInput(input: Seq[Input]): Unit = input.foreach {
-    case _:Input.Script | _:Input.ESModule | _:Input.CommonJSModule =>
+    case _:Input.Script | _:Input.ESModule | _:Input.CommonJSModule | _:Input.WasmModule =>
       // ok
     case _ =>
       throw new UnsupportedInputException(input)
@@ -95,6 +95,70 @@ object NodeJSEnv {
         "require('source-map-support').install();".getBytes(StandardCharsets.UTF_8))
   }
 
+  private lazy val wasmModuleSupport: String = {
+    val helperModuleBytes =
+      WasmGCArrayStringConversionModule.moduleBytes
+    val helperModuleBytesContent =
+      helperModuleBytes.map(java.lang.Byte.toUnsignedInt(_)).mkString(",")
+
+    raw"""
+      |const helperModuleBytes = new Uint8Array([$helperModuleBytesContent]);
+      |const options = { builtins: ['js-string'] };
+      |const helpersPromise =
+      |  WebAssembly.instantiate(helperModuleBytes, {}, options).then(m => m.instance.exports);
+      |
+      |async function importWasmModule(path) {
+      |  const { stringToArray, arrayToString } = await helpersPromise;
+      |
+      |  // a null prototype is required to isolate Wasm even from what's in Object.prototype
+      |  const importsObj = Object.create(null);
+      |
+      |  if (typeof scalajsCom !== 'undefined') {
+      |    const comImport = Object.create(null);
+      |    comImport.send = (msg) => scalajsCom.send(arrayToString(msg));
+      |    importsObj["scalajs:com"] = comImport;
+      |  }
+      |
+      |  // Load and compile the Wasm module
+      |  const fs = await import('node:fs/promises');
+      |  const { dirname, resolve } = await import('node:path');
+      |  const buffer = await fs.readFile(path);
+      |  const module = await WebAssembly.compile(buffer);
+      |
+      |  // Look for additional imports through Node.js resolution
+      |  const dir = dirname(path);
+      |  for (const importDecl of WebAssembly.Module.imports(module)) {
+      |    const moduleName = importDecl.module;
+      |    if (!Object.hasOwn(importsObj, moduleName)) {
+      |      // TODO Use import.meta.resolve with 2 arguments when that becomes stable.
+      |      // In the meantime, use an elementary substitute.
+      |      // It does not work for "bare specifiers".
+      |      const resolvedModuleName = (
+      |        (moduleName.startsWith("./") || moduleName.startsWith("../"))
+      |        ? resolve(dir, moduleName)
+      |        : moduleName
+      |      );
+      |      const importedModule = await import(resolvedModuleName);
+      |      importsObj[moduleName] = importedModule;
+      |    }
+      |  }
+      |
+      |  // Instantiate the module with all the resolved imports
+      |  const instance = await WebAssembly.instantiate(module, importsObj);
+      |  const moduleExports = instance.exports;
+      |
+      |  if (typeof scalajsCom !== 'undefined') {
+      |    const newReceive = moduleExports["scalajs:com/receive"];
+      |    if (newReceive !== undefined) {
+      |      scalajsCom.init((msg) => newReceive(stringToArray(msg)));
+      |    }
+      |  }
+      |
+      |  return moduleExports;
+      |}
+    """.stripMargin
+  }
+
   private def write(input: Seq[Input])(out: OutputStream): Unit = {
     def runScript(path: Path): String = {
       try {
@@ -129,30 +193,41 @@ object NodeJSEnv {
     def importESModule(module: Path): String =
       s"""import("${escapeJS(toFile(module).toPath.toUri.toASCIIString)}")"""
 
+    def importWasmModule(module: Path): String =
+      s"""importWasmModule("${escapeJS(toFile(module).getAbsolutePath)}")"""
+
     def execInputExpr(input: Input): String = input match {
       case Input.Script(script)         => runScript(script)
       case Input.CommonJSModule(module) => requireCommonJSModule(module)
       case Input.ESModule(module)       => importESModule(module)
+      case Input.WasmModule(module)     => importWasmModule(module)
     }
+
+    val hasESModule = input.exists(_.isInstanceOf[Input.ESModule])
+    val hasWasmModule = input.exists(_.isInstanceOf[Input.WasmModule])
 
     val p = new PrintStream(out, false, "UTF8")
     try {
-      if (!input.exists(_.isInstanceOf[Input.ESModule])) {
-        /* If there is no ES module in the input, we can do everything
-         * synchronously, and directly on the standard input.
+      if (!hasESModule && !hasWasmModule) {
+        /* If there is no ES module nor Wasm module in the input, we can do
+         * everything synchronously, and directly on the standard input.
          */
         for (item <- input)
           p.println(execInputExpr(item) + ";")
       } else {
-        /* If there is at least one ES module, we must asynchronous chain things,
-         * and we must use an actual file to feed code to Node.js (because
-         * `import()` cannot be used from the standard input).
+        /* If there is at least one ES module or Wasm module, we must asynchronously
+         * chain things, and we must use an actual file to feed code to Node.js
+         * (because `import()` cannot be used from the standard input).
          */
         val importChain = input.foldLeft("Promise.resolve()") { (prev, item) =>
           s"$prev.\n  then(() => ${execInputExpr(item)})"
         }
         val importerFileContent = {
+          /* Note: we include the wasmModuleSupport directly here so that we
+           * do not need to put anything in the global scope.
+           */
           s"""
+            |${if (hasWasmModule) wasmModuleSupport else "" }
             |$importChain.catch(e => {
             |  console.error(e);
             |  process.exit(1);
