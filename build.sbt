@@ -3,14 +3,15 @@ import com.typesafe.tools.mima.core.{Problem, ProblemFilters}
 val previousVersion: Option[String] = Some("1.6.0")
 val newScalaBinaryVersionsInThisRelease: Set[String] = Set.empty
 
+val createTestFiles: TaskKey[Unit] = taskKey("create the test files for NodeJSEnv")
+
 inThisBuild(Def.settings(
   organization := "org.scala-js",
   scalaVersion := "2.12.21",
-  crossScalaVersions := Seq("2.12.21", "2.13.18", "3.3.8"),
+  crossScalaVersions := Seq("2.12.21", "2.13.18", "3.8.3"),
   scalacOptions ++= Seq(
     "-deprecation",
     "-feature",
-    "-Xfatal-warnings",
     "-encoding", "utf-8",
   ),
 
@@ -51,6 +52,27 @@ inThisBuild(Def.settings(
 val commonSettings = Def.settings(
   // Links to the JavaDoc do not work
   Compile / doc / scalacOptions -= "-Xfatal-warnings",
+
+  // Fatal warnings, with some exceptions in 3.x
+  scalacOptions ++= {
+    if (scalaVersion.value.startsWith("3.")) {
+      /* Scala 3 deprecates a bunch of syntax. We cannot get rid of some of
+       * it, because we still have to cross-compile with Scala 2.
+       * We silence the corresponding warnings.
+       */
+      val messageKeywordsToSilence = List(
+        "private[this]",
+        "_*",
+      )
+      val regex = messageKeywordsToSilence.map(java.util.regex.Pattern.quote(_)).mkString("|")
+      Seq(
+        "-Werror",
+        s"-Wconf:msg=.*($regex).*:s",
+      )
+    } else {
+      Seq("-Xfatal-warnings")
+    }
+  },
 
   // Scaladoc linking
   apiURL := {
@@ -121,6 +143,7 @@ lazy val `scalajs-js-envs-test-kit` = project
     libraryDependencies ++= Seq(
         "com.google.jimfs" % "jimfs" % "1.3.1",
         "junit" % "junit" % "4.12",
+        "org.scala-js" %% "scalajs-linker" % "1.22.0", // to write Wasm modules
         "com.novocode" % "junit-interface" % "0.11" % "test"
     ),
   )
@@ -134,5 +157,11 @@ lazy val `scalajs-env-nodejs` = project
         "com.google.jimfs" % "jimfs" % "1.3.1",
         "com.novocode" % "junit-interface" % "0.11" % "test"
     ),
+    createTestFiles := {
+      val targetFile = target.value / "wasm-test.wasm"
+      val relPathToTestLib = "../testfiles/testlib.js"
+      build.GenImportTestWasm.generate(targetFile, relPathToTestLib)
+    },
+    Test / compile := (Test / compile).dependsOn(createTestFiles).value,
   )
   .dependsOn(`scalajs-js-envs`, `scalajs-js-envs-test-kit` % "test")

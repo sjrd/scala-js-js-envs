@@ -80,6 +80,29 @@ trait JSEnv {
    *  `r` receives n messages.
    *  </ul>
    *
+   *  <h2>Wasm module support (experimental)</h2>
+   *
+   *  This section is normative, but experimental. Implementations are expected
+   *  to follow the specification below. The test kit asserts that
+   *  implementations are conforming, assuming they declare support for Com and
+   *  Wasm modules. However, it may change in future minor versions of
+   *  `scalajs-js-envs`. If that happens, it will require changes in downstream
+   *  implementations as well.
+   *
+   *  When loading a Wasm module, if (but not only if) the module declares an
+   *  `import` with the module name `"scalajs:com"`, the env must provide
+   *  that import with a function `"send"`. The signature of `"send"` must be
+   *  `[(ref (array (mut i16))] -> []`, and its effect must be equivalent to
+   *  calling `scalajsCom.send(s)` where `s` is a string with the code units
+   *  read from the i16 array.
+   *
+   *  After loading a Wasm module, if it exports a member `r` named
+   *  `"scalajs:com/receive"`, the env must register it as the message
+   *  receiver callback. It may assume that the signature of `r` is
+   *  `[(ref (array (mut i16))] -> []`. In other words, it must perform steps
+   *  equivalent to calling `scalajsCom.init(cb)`, such that `cb(s)` calls `r`
+   *  with the i16 array of code units in `s`.
+   *
    *  @param onMessage Callback invoked each time a message is received from the
    *      JS VM. The implementation may not call this anymore once
    *      [[JSRun#future]] of the returned [[JSComRun]] is completed. Further,

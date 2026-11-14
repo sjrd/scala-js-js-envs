@@ -39,11 +39,11 @@ import org.junit.runners.model.TestClass
 abstract class JSEnvSuite(private[test] val config: JSEnvSuiteConfig)
 
 /** Runner for a [[JSEnvSuite]]. May only be used on subclasses of [[JSEnvSuite]]. */
-final class JSEnvSuiteRunner(root: Class[_], config: JSEnvSuiteConfig)
+final class JSEnvSuiteRunner(root: Class[?], config: JSEnvSuiteConfig)
     extends Suite(root, JSEnvSuiteRunner.getRunners(config)) {
 
   /** Constructor for reflective instantiation via `@RunWith`. */
-  def this(suite: Class[_ <: JSEnvSuite]) =
+  def this(suite: Class[? <: JSEnvSuite]) =
     this(suite, suite.getDeclaredConstructor().newInstance().config)
 
   /** Constructor for instantiation in a user defined Runner. */
@@ -88,14 +88,19 @@ private object JSEnvSuiteRunner {
       if (config.supportsESModules)
         b += InputKind.ESModule
 
+      if (config.supportsWasmModules)
+        b += InputKind.WasmModule
+
       b.result()
     }
 
     for (inputKind <- inputKindValues) {
+      val isWasm = inputKind == TestKit.InputKind.WasmModule
+
       for (withCom <- withComValues)
         runners.add(r[RunTests](config, "withCom" -> withCom, "inputKind" -> inputKind))
 
-      if (config.supportsTimeout) {
+      if (config.supportsTimeout && !isWasm) {
         for (withCom <- withComValues)
           runners.add(r[TimeoutRunTests](config, "withCom" -> withCom,  "inputKind" -> inputKind))
       }
@@ -103,7 +108,7 @@ private object JSEnvSuiteRunner {
       if (config.supportsCom)
         runners.add(r[ComTests](config, "inputKind" -> inputKind))
 
-      if (config.supportsCom && config.supportsTimeout)
+      if (config.supportsCom && config.supportsTimeout && !isWasm)
         runners.add(r[TimeoutComTests](config, "inputKind" -> inputKind))
     }
 

@@ -58,12 +58,20 @@ final class TestKit(jsEnv: JSEnv, timeout: FiniteDuration,
     start(codeToInput(code))
 
   /** Starts a [[Run]] for testing. */
+  def start(module: WasmModule): Run =
+    start(wasmModuleToInput(module))
+
+  /** Starts a [[Run]] for testing. */
   def start(input: Seq[Input]): Run =
     start(input, RunConfig())
 
   /** Starts a [[Run]] for testing. */
   def start(code: String, config: RunConfig): Run =
     start(codeToInput(code), config)
+
+  /** Starts a [[Run]] for testing. */
+  def start(module: WasmModule, config: RunConfig): Run =
+    start(wasmModuleToInput(module), config)
 
   /** Starts a [[Run]] for testing. */
   def start(input: Seq[Input], config: RunConfig): Run = {
@@ -76,6 +84,10 @@ final class TestKit(jsEnv: JSEnv, timeout: FiniteDuration,
     startWithCom(codeToInput(code))
 
   /** Starts a [[ComRun]] for testing. */
+  def startWithCom(module: WasmModule): ComRun =
+    startWithCom(wasmModuleToInput(module))
+
+  /** Starts a [[ComRun]] for testing. */
   def startWithCom(input: Seq[Input]): ComRun =
     startWithCom(input, RunConfig())
 
@@ -84,10 +96,14 @@ final class TestKit(jsEnv: JSEnv, timeout: FiniteDuration,
     startWithCom(codeToInput(code), config)
 
   /** Starts a [[ComRun]] for testing. */
+  def startWithCom(module: WasmModule, config: RunConfig): ComRun =
+    startWithCom(wasmModuleToInput(module), config)
+
+  /** Starts a [[ComRun]] for testing. */
   def startWithCom(input: Seq[Input], config: RunConfig): ComRun = {
     val msg = new MsgHandler
-    val (run, out, err) = io(config)(jsEnv.startWithCom(input, _, msg.onMessage _))
-    run.future.onComplete(msg.onRunComplete _)(TestKit.completer)
+    val (run, out, err) = io(config)(jsEnv.startWithCom(input, _, msg.onMessage(_)))
+    run.future.onComplete(msg.onRunComplete(_))(using TestKit.completer)
 
     new ComRun(run, out, err, msg, timeout)
   }
@@ -97,12 +113,20 @@ final class TestKit(jsEnv: JSEnv, timeout: FiniteDuration,
     withRun(codeToInput(code))(body)
 
   /** Convenience method to start a [[Run]] and close it after usage. */
+  def withRun[T](module: WasmModule)(body: Run => T): T =
+    withRun(wasmModuleToInput(module))(body)
+
+  /** Convenience method to start a [[Run]] and close it after usage. */
   def withRun[T](input: Seq[Input])(body: Run => T): T =
     withRun(input, RunConfig())(body)
 
   /** Convenience method to start a [[Run]] and close it after usage. */
   def withRun[T](code: String, config: RunConfig)(body: Run => T): T =
     withRun(codeToInput(code), config)(body)
+
+  /** Convenience method to start a [[Run]] and close it after usage. */
+  def withRun[T](module: WasmModule, config: RunConfig)(body: Run => T): T =
+    withRun(wasmModuleToInput(module), config)(body)
 
   /** Convenience method to start a [[Run]] and close it after usage. */
   def withRun[T](input: Seq[Input], config: RunConfig)(body: Run => T): T = {
@@ -115,11 +139,19 @@ final class TestKit(jsEnv: JSEnv, timeout: FiniteDuration,
   def withComRun[T](code: String)(body: ComRun => T): T = withComRun(codeToInput(code))(body)
 
   /** Convenience method to start a [[ComRun]] and close it after usage. */
+  def withComRun[T](module: WasmModule)(body: ComRun => T): T =
+    withComRun(wasmModuleToInput(module))(body)
+
+  /** Convenience method to start a [[ComRun]] and close it after usage. */
   def withComRun[T](input: Seq[Input])(body: ComRun => T): T = withComRun(input, RunConfig())(body)
 
   /** Convenience method to start a [[ComRun]] and close it after usage. */
   def withComRun[T](code: String, config: RunConfig)(body: ComRun => T): T =
     withComRun(codeToInput(code), config)(body)
+
+  /** Convenience method to start a [[ComRun]] and close it after usage. */
+  def withComRun[T](module: WasmModule, config: RunConfig)(body: ComRun => T): T =
+    withComRun(wasmModuleToInput(module), config)(body)
 
   /** Convenience method to start a [[ComRun]] and close it after usage. */
   def withComRun[T](input: Seq[Input], config: RunConfig)(body: ComRun => T): T = {
@@ -137,8 +169,8 @@ final class TestKit(jsEnv: JSEnv, timeout: FiniteDuration,
     val err = new IOReader
 
     def onOutputStream(o: Option[InputStream], e: Option[InputStream]) = {
-      o.foreach(out.onInputStream _)
-      e.foreach(err.onInputStream _)
+      o.foreach(out.onInputStream(_))
+      e.foreach(err.onInputStream(_))
     }
 
     val newConfig = config
@@ -148,8 +180,8 @@ final class TestKit(jsEnv: JSEnv, timeout: FiniteDuration,
 
     val run = start(newConfig)
 
-    run.future.onComplete(out.onRunComplete _)(TestKit.completer)
-    run.future.onComplete(err.onRunComplete _)(TestKit.completer)
+    run.future.onComplete(out.onRunComplete(_))(using TestKit.completer)
+    run.future.onComplete(err.onRunComplete(_))(using TestKit.completer)
 
     (run, out, err)
   }
@@ -158,6 +190,12 @@ final class TestKit(jsEnv: JSEnv, timeout: FiniteDuration,
     val p = Files.write(
         Jimfs.newFileSystem().getPath("test.js"),
         code.getBytes(StandardCharsets.UTF_8))
+    List(pathToInput(p))
+  }
+
+  private def wasmModuleToInput(module: WasmModule): Seq[Input] = {
+    val p = Jimfs.newFileSystem().getPath("test.wasm")
+    module.writeTo(p)
     List(pathToInput(p))
   }
 }
@@ -175,6 +213,7 @@ object TestKit {
       case Script         => Input.Script(path)
       case CommonJSModule => Input.CommonJSModule(path)
       case ESModule       => Input.ESModule(path)
+      case WasmModule     => Input.WasmModule(path)
     }
   }
 
@@ -184,5 +223,6 @@ object TestKit {
     case object Script extends InputKind
     case object CommonJSModule extends InputKind
     case object ESModule extends InputKind
+    case object WasmModule extends InputKind
   }
 }
